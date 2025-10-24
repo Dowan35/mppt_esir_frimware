@@ -1,0 +1,8 @@
+# Compiled binary files
+/bin
+*.o
+
+# Eclipse project files
+/.cproject
+/.project
+/.settings
