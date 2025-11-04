@@ -22,6 +22,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f0xx_hal.h"
+#include "stm32f0xx_hal_dma.h"
+#include "stm32f0xx_hal_tim.h"
 
 #ifdef BOARD_MPPT
 #include "stm32f030f4_mppt.h"

@@ -2,8 +2,8 @@
 # User config
 ####################
 
-TARGET_BOARD = MPPT
-# TARGET_BOARD = DISCOVERY
+# TARGET_BOARD = MPPT
+TARGET_BOARD = DISCOVERY
 
 #SRC_FOLDER = ./src.old
 SRC_FOLDER = ./src
@@ -136,7 +136,7 @@ SRC += $(wildcard $(SRC_FOLDER)/*.c)
 GCC_FLAGS += -I$(SRC_FOLDER)
 
 # Linker flags
-LD_FLAGS = -Xlinker --print-memory-usage
+LD_FLAGS = -Xlinker --gc-sections -Xlinker --print-memory-usage
 
 # Startup file
 DEVICE_STARTUP = $(STARTUP_FOLDER)/$(MAPPED_DEVICE).s

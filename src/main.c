@@ -55,77 +55,113 @@ int main(void) {
 	 */
 	HAL_Init();
 
+  TIM_HandleTypeDef htim1;
+
 	/* Configure the system clock to have a system clock = 48 Mhz */
 	SystemClock_Config();
 
 #ifdef BOARD_MPPT
-	BoardMppt_LED_Init();
+	/*Configure PA10 in TIM_CH3*/
+    __HAL_RCC_GPIOA_CLK_ENABLE();
 
-	while (1) {
-		BoardMppt_LED_On();
-		HAL_Delay(500);
-		BoardMppt_LED_Off();
-		HAL_Delay(500);
-	}
-#else
-  /* Configure LED3 and LED4 on STM32F0308-Discovery */
-  BSP_LED_Init(LED3);
-  BSP_LED_Init(LED4);
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3 = AF2 sur PA10
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* Initialize User_Button on STM32F0308-Discovery */
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_GPIO);
+    /*Configure PB1 in TIM_CH3N*/
+    __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /* Initiate Blink Speed variable */ 
-  BlinkSpeed = 1;
+    GPIO_InitStruct.Pin = GPIO_PIN_1;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3N = PB1
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    /*Activate TIM1*/
+    __HAL_RCC_TIM1_CLK_ENABLE();
+
+    /*Configure TIM1 for PWM*/
+    htim1.Instance = TIM1;
+    htim1.Init.Prescaler = 0;                     // Timer clock = 48 MHz
+    htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim1.Init.Period = 959;                      // PWM freq = 50 kHz
+    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_PWM_Init(&htim1);
+
+    /*Configure CH3*/
+    TIM_OC_InitTypeDef sConfigOC = {0};
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse = 240;                        // 50% duty cycle
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
+
+    /*Start PWM on CH3*/
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
 
   /* Infinite loop */
   while(1)
   {  
-    /* Check if the user button is pressed */
-    if(BSP_PB_GetState(BUTTON_USER) == GPIO_PIN_SET)
-    {
-      /* BlinkSpeed: 1 -> 2 -> 0, then re-cycle */
-      /* Turn on LD4 Blue LED during 1s each time User button is pressed */
-      BSP_LED_On(LED4);
+    
+  }
+#else
 
-      /* wait for 1s */
-      HAL_Delay(1000);
+    /*Configure PA10 in TIM_CH3*/
+    __HAL_RCC_GPIOA_CLK_ENABLE();
 
-      /* Turn off LD4 Blue LED after 1s each time User button is pressed */
-      BSP_LED_Off(LED4);
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3 = AF2 sur PA10
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-      /* Increment the blink speed counter */
-      BlinkSpeed++;
+    /*Configure PB1 in TIM_CH3N*/
+    __HAL_RCC_GPIOB_CLK_ENABLE();
 
-      /* Default value for blink speed counter */
-      if(BlinkSpeed == 3)
-      {  
-        BlinkSpeed = 0;
-      }
-    }
+    GPIO_InitStruct.Pin = GPIO_PIN_1;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3N = PB1
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    /* Test on blink speed */
-    if(BlinkSpeed == 2)
-    {
-      /* LED3 toggles each 100 ms */
-      BSP_LED_Toggle(LED3);
-      
-      /* maintain LED3 status for 100ms */
-      HAL_Delay(100);
-    }
-    else if(BlinkSpeed == 1)
-    {
-      /* LED3 toggles each 200 ms */
-      BSP_LED_Toggle(LED3);
-      
-      /* maintain LED3 status for 200ms */
-      HAL_Delay(200);
-    }
-    else
-    {  
-      /* LED3 Off */
-      BSP_LED_Off(LED3);
-    }
+    /*Activate TIM1*/
+    __HAL_RCC_TIM1_CLK_ENABLE();
+
+    /*Configure TIM1 for PWM*/
+    htim1.Instance = TIM1;
+    htim1.Init.Prescaler = 0;                     // Timer clock = 48 MHz
+    htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+    htim1.Init.Period = 959;                      // PWM freq = 50 kHz
+    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+    HAL_TIM_PWM_Init(&htim1);
+
+    /*Configure CH3*/
+    TIM_OC_InitTypeDef sConfigOC = {0};
+    sConfigOC.OCMode = TIM_OCMODE_PWM1;
+    sConfigOC.Pulse = 480;                        // 50% duty cycle
+    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
+
+    /*Start PWM on CH3*/
+    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
+
+  /* Infinite loop */
+  while(1)
+  {  
+    
   }
 #endif
 }
