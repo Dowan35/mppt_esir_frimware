@@ -97,7 +97,7 @@ int main(void) {
     /*Configure CH3*/
     TIM_OC_InitTypeDef sConfigOC = {0};
     sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 240;                        // 50% duty cycle
+    sConfigOC.Pulse = 191;                        // 240=25% duty cycle
     sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
     HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
@@ -106,27 +106,15 @@ int main(void) {
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
     HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
 
-  BSP_LED_Init(LED4);
-  /* Infinite loop */
-  while(1)
-  {  
-      BSP_LED_On(LED4);
+ 	BoardMppt_LED_Init();
 
-      /* wait for 1s */
-      HAL_Delay(1000);
+	while (1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
 
-      /* Turn off LD4 Blue LED after 1s */
-      BSP_LED_Off(LED4);
-
-      /* Increment the blink speed counter */
-      BlinkSpeed++;
-
-      /* Default value for blink speed counter */
-      if(BlinkSpeed == 3)
-      {  
-        BlinkSpeed = 0;
-      }
-  }
 #else
 
     /*Configure PA10 in TIM_CH3*/
