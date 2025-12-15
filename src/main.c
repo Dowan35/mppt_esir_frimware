@@ -61,6 +61,16 @@ int main(void) {
 	SystemClock_Config();
 
 #ifdef BOARD_MPPT
+
+  BoardMppt_LED_Init();
+
+	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
+
 	/*Configure PA10 in TIM_CH3*/
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
@@ -97,7 +107,7 @@ int main(void) {
     /*Configure CH3*/
     TIM_OC_InitTypeDef sConfigOC = {0};
     sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 240;                        // 50% duty cycle
+    sConfigOC.Pulse = 191;                        // 50% duty cycle
     sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
     HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
@@ -112,6 +122,15 @@ int main(void) {
     
   }
 #else
+
+    BoardMppt_LED_Init();
+
+	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
 
     /*Configure PA10 in TIM_CH3*/
     __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -149,7 +168,7 @@ int main(void) {
     /*Configure CH3*/
     TIM_OC_InitTypeDef sConfigOC = {0};
     sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 480;                        // 50% duty cycle
+    sConfigOC.Pulse = 240;                        // 50% duty cycle
     sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
     HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
