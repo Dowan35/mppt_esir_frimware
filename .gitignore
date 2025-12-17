@@ -1,7 +1,7 @@
 # Compiled binary files
 /bin
 *.o
-
+*.key
 # Eclipse project files
 /.cproject
 /.project
