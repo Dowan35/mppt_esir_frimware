@@ -2,8 +2,8 @@
 # User config
 ####################
 
-# TARGET_BOARD = MPPT
-TARGET_BOARD = DISCOVERY
+TARGET_BOARD = MPPT
+# TARGET_BOARD = DISCOVERY
 
 #SRC_FOLDER = ./src.old
 SRC_FOLDER = ./src

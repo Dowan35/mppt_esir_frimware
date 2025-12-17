@@ -18,6 +18,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdio.h>
+#include <string.h>
 
 /** @addtogroup STM32F0xx_HAL_Demonstrations
  * @{
@@ -31,7 +33,20 @@
 uint8_t BlinkSpeed = 0;
 #endif
 
+/*UART communication*/
+UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
+
+/*ADC conversion*/
+ADC_HandleTypeDef hadc;
+
 /* Private function prototypes -----------------------------------------------*/
+#ifdef BOARD_MPPT
+static void MX_USART1_UART_Init(void);
+#else
+static void MX_USART2_UART_Init(void);
+#endif
+static void MX_ADC_Init(void);
 static void SystemClock_Config(void);
 static void Error_Handler(void);
 
@@ -116,71 +131,62 @@ int main(void) {
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
     HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
 
+    /* USART init*/
+    MX_USART1_UART_Init();
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    /* ADC init */
+    MX_ADC_Init();
+    HAL_ADCEx_Calibration_Start(&hadc);
+
   /* Infinite loop */
   while(1)
   {  
-    
+    uint32_t adc_value;
+    HAL_ADC_Start(&hadc);
+    HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+    adc_value = HAL_ADC_GetValue(&hadc);
+    HAL_ADC_Stop(&hadc);
+
+    float tension = adc_value*3.3/4095;
+
+    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_9);
+    char msg[32];
+    sprintf(msg, "ADC = %f\r\n", tension);
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    HAL_Delay(1000);
   }
 #else
 
-    BoardMppt_LED_Init();
+  /* USART init*/
+  MX_USART2_UART_Init();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
 
-	for (int i = 0 ; i < 3 ; i = i + 1) {
-		BoardMppt_LED_On();
-		HAL_Delay(500);
-		BoardMppt_LED_Off();
-		HAL_Delay(500);
-	}
+  /* ADC init */
+  MX_ADC_Init();
+  HAL_ADCEx_Calibration_Start(&hadc);
 
-    /*Configure PA10 in TIM_CH3*/
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+  GPIO_InitTypeDef gpio = {0};
+  gpio.Pin = GPIO_PIN_9;
+  gpio.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &gpio);
+  
+  while (1)
+  {
+    uint32_t adc_value;
+    HAL_ADC_Start(&hadc);
+    HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+    adc_value = HAL_ADC_GetValue(&hadc);
+    HAL_ADC_Stop(&hadc);
 
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3 = AF2 sur PA10
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    float tension = adc_value*3.3/4095;
 
-    /*Configure PB1 in TIM_CH3N*/
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-
-    GPIO_InitStruct.Pin = GPIO_PIN_1;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3N = PB1
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-    /*Activate TIM1*/
-    __HAL_RCC_TIM1_CLK_ENABLE();
-
-    /*Configure TIM1 for PWM*/
-    htim1.Instance = TIM1;
-    htim1.Init.Prescaler = 0;                     // Timer clock = 48 MHz
-    htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim1.Init.Period = 959;                      // PWM freq = 50 kHz
-    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    HAL_TIM_PWM_Init(&htim1);
-
-    /*Configure CH3*/
-    TIM_OC_InitTypeDef sConfigOC = {0};
-    sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 240;                        // 50% duty cycle
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
-
-    /*Start PWM on CH3*/
-    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
-    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
-
-  /* Infinite loop */
-  while(1)
-  {  
-    
+    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_9);
+    char msg[32];
+    sprintf(msg, "ADC = %f\r\n", tension);
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    HAL_Delay(1000);
   }
 #endif
 }
@@ -224,6 +230,75 @@ static void SystemClock_Config(void) {
 	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK) {
 		Error_Handler();
 	}
+}
+
+#ifdef BOARD_MPPT
+void MX_USART1_UART_Init(void){
+    huart1.Instance = USART1;
+    huart1.Init.BaudRate = 115200;
+    huart1.Init.WordLength = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits = UART_STOPBITS_1;
+    huart1.Init.Parity = UART_PARITY_NONE;
+    huart1.Init.Mode = UART_MODE_TX_RX;
+    huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&huart1) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+#else
+void MX_USART2_UART_Init(void){
+    huart2.Instance = USART2;
+    huart2.Init.BaudRate = 115200;
+    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+    huart2.Init.StopBits = UART_STOPBITS_1;
+    huart2.Init.Parity = UART_PARITY_NONE;
+    huart2.Init.Mode = UART_MODE_TX_RX;
+    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&huart2) != HAL_OK)
+    {
+        Error_Handler();
+    }
+}
+#endif
+
+static void MX_ADC_Init(void)
+{
+    ADC_ChannelConfTypeDef sConfig = {0};
+
+    hadc.Instance = ADC1;
+    hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    hadc.Init.Resolution = ADC_RESOLUTION_12B;
+    hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
+    hadc.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+    hadc.Init.LowPowerAutoWait = DISABLE;
+    hadc.Init.LowPowerAutoPowerOff = DISABLE;
+    hadc.Init.ContinuousConvMode = DISABLE;
+    hadc.Init.DiscontinuousConvMode = DISABLE;
+    hadc.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+    hadc.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+    hadc.Init.DMAContinuousRequests = DISABLE;
+    hadc.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+
+    if (HAL_ADC_Init(&hadc) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    /* Sélection du channel PA0 */
+    sConfig.Channel = ADC_CHANNEL_0;
+    sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+    sConfig.SamplingTime = ADC_SAMPLETIME_41CYCLES_5;
+
+    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
+    {
+        Error_Handler();
+    }
 }
 
 /**
