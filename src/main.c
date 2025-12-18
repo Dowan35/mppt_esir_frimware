@@ -55,13 +55,6 @@ int main(void) {
 
     BoardMppt_LED_Init();
 
-	for (int i = 0 ; i < 3 ; i = i + 1) {
-		BoardMppt_LED_On();
-		HAL_Delay(500);
-		BoardMppt_LED_Off();
-		HAL_Delay(500);
-	}
-
 
     /* Initialisation des périphériques */
     MX_DMA_Init();
@@ -69,12 +62,6 @@ int main(void) {
     MX_TIM1_PWM_Init();
     MX_USART1_UART_Init();
 
-    	for (int i = 0 ; i < 3 ; i = i + 1) {
-		BoardMppt_LED_On();
-		HAL_Delay(500);
-		BoardMppt_LED_Off();
-		HAL_Delay(500);
-	}
 
     /* Démarrage de la calibration de l'ADC */
     if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
