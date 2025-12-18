@@ -18,8 +18,8 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 /** @addtogroup STM32F0xx_HAL_Demonstrations
  * @{
@@ -148,12 +148,14 @@ int main(void) {
     adc_value = HAL_ADC_GetValue(&hadc);
     HAL_ADC_Stop(&hadc);
 
-    float tension = adc_value*3.3/4095;
+    uint32_t tension = (adc_value * 3300l * 8l) / 4095; /*Multiplied by 8 because of the voltage divider*/
 
-    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_9);
-    char msg[32];
-    sprintf(msg, "ADC = %f\r\n", tension);
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)"ADC=", 4, 100);
+    char num[8];
+    utoa(tension, num, 10);
+    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, 100);
+
     HAL_Delay(1000);
   }
 #else
