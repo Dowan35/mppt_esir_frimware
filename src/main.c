@@ -53,11 +53,28 @@ int main(void) {
     HAL_Init();
     SystemClock_Config();
 
+    BoardMppt_LED_Init();
+
+	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
+
+
     /* Initialisation des périphériques */
     MX_DMA_Init();
     MX_ADC_Init();
     MX_TIM1_PWM_Init();
     MX_USART1_UART_Init();
+
+    	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
 
     /* Démarrage de la calibration de l'ADC */
     if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
@@ -65,11 +82,25 @@ int main(void) {
         Error_Handler();
     }
 
+    	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
+
     /* Démarrage de l'ADC en mode DMA (acquisition continue des 4 canaux) */
     if (HAL_ADC_Start_DMA(&hadc1, aADCxConvertedData, ADC_CONV_COUNT) != HAL_OK)
     {
         Error_Handler();
     }
+
+    	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
 
     /* Démarrage du PWM sur CH3 et CH3N */
     HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
@@ -77,6 +108,13 @@ int main(void) {
 
     /* Définir une valeur initiale de Duty Cycle (Pulse) */
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
+
+    	for (int i = 0 ; i < 3 ; i = i + 1) {
+		BoardMppt_LED_On();
+		HAL_Delay(500);
+		BoardMppt_LED_Off();
+		HAL_Delay(500);
+	}
 
     // /* Boucle infinie */
     // while(1)
