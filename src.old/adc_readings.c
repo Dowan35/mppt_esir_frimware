@@ -1,6 +1,5 @@
 //#include "main.h"
 #include <stdio.h>
-#include <cstdint>
 
 // suppositions:
 // V_PV : PA0 (ADC_IN0)

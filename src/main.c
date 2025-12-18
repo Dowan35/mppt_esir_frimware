@@ -2,6 +2,7 @@
 #include "main.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
 /* Private define ------------------------------------------------------------*/
 #define PWM_PERIOD   959    // 50 kHz sur un bus horloge de 48 MHz
@@ -42,6 +43,8 @@ static void MX_TIM1_PWM_Init(void);
 static void MX_USART1_UART_Init(void);
 void MPPT_Algorithm_Run(void);
 void Send_UART_Status(void);
+void UART_SendString(char* s);
+void UART_SendInt(uint32_t n);
 
 /**
  * @brief  Main program
@@ -75,14 +78,29 @@ int main(void) {
     /* Définir une valeur initiale de Duty Cycle (Pulse) */
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
 
-    /* Boucle infinie */
-    while(1)
-    {
-        MPPT_Algorithm_Run();
-        Send_UART_Status();
+    // /* Boucle infinie */
+    // while(1)
+    // {
+    //     //MPPT_Algorithm_Run();
+    //     Send_UART_Status();
 
-        /* Période d'exécution du MPPT : 100 ms */
-        HAL_Delay(100);
+    //     /* Période d'exécution du MPPT : 100 ms */
+    //     HAL_Delay(100);
+    // }
+    while (1) {
+        // 1. On vérifie si les données brutes changent (si c'est tjs 0, le DMA est mort)
+        UART_SendString("RAW0:"); UART_SendInt(aADCxConvertedData[0]); 
+        UART_SendString(" RAW2:"); UART_SendInt(aADCxConvertedData[2]);
+        UART_SendString("\r\n");
+
+        // 2. Calcul simple comme dans votre code qui marche
+        // vpv = (ADC * 3300 * 8) / 4095
+        uint32_t vpv_simple = (aADCxConvertedData[0] * 3300l * 8l) / 4095;
+        
+        UART_SendString("V_PV_TEST:"); UART_SendInt(vpv_simple);
+        UART_SendString("\r\n");
+
+        HAL_Delay(1000);
     }
 }
 
@@ -197,7 +215,7 @@ static void MX_ADC_Init(void)
     // 1. V_PV (PA0 -> IN0)
     sConfig.Channel = ADC_CHANNEL_0;
     sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-    sConfig.SamplingTime = ADC_SAMPLETIME_71_5CYCLES;
+    sConfig.SamplingTime = ADC_SAMPLETIME_71CYCLES_5;
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK) { Error_Handler(); }
 
     // 2. I_PV (PA1 -> IN1)
@@ -252,8 +270,8 @@ static void MX_TIM1_PWM_Init(void)
     
     /* Configuration du Dead Time et du Main Output Enable (MOE) 
        Crucial pour les convertisseurs (buck, boost, etc.) */
-    sBDTR.OSSRState = TIM_OSSR_DISABLE;
-    sBDTR.OSSIState = TIM_OSSI_DISABLE;
+    sBDTR.OffStateRunMode = TIM_OSSR_DISABLE;
+    sBDTR.OffStateIDLEMode = TIM_OSSI_DISABLE;
     sBDTR.LockLevel = TIM_LOCKLEVEL_OFF;
     sBDTR.DeadTime = 10; // Exemple: 10 * 1/48MHz * 2 = ~416ns de temps mort (à ajuster)
     sBDTR.BreakState = TIM_BREAK_DISABLE;
@@ -415,42 +433,72 @@ void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef* htim)
 //                          Fonctions de Monitoring
 // ===========================================================================
 
+// Fonction très légère pour envoyer un entier via UART
+void UART_SendString(char* s) {
+    HAL_UART_Transmit(&huart1, (uint8_t*)s, strlen(s), 100);
+}
+
+void UART_SendInt(uint32_t n) {
+    char buf[12];
+    int i = 0;
+    if (n == 0) { UART_SendString("0"); return; }
+    while (n > 0) {
+        buf[i++] = (n % 10) + '0';
+        n /= 10;
+    }
+    while (--i >= 0) HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i], 1, 10);
+}
+
+void Send_UART_Status(void) {
+    // Calculs entiers x100 (Hypothèse V_ratio=10, I_ratio=10, vref=3.3v, ADC 12 bits)
+    // On multiplie d'abord pour garder la précision avant de diviser par 4095
+    uint32_t vpv_x100 = (uwVpv_ADC * 3300 * 8) / 4095; // tension panneau x100
+    uint32_t vbat_x100 = (uwVbat_ADC * 3300 * 2) / (4095*3);//tension batterie x100
+    uint32_t dc_x100 = (uwDutyCycle * 100000) / PWM_PERIOD;//duty cycle x100
+
+    UART_SendString("PV_V_x100: "); UART_SendInt(vpv_x100);
+    UART_SendString(" | BAT_V_x100: "); UART_SendInt(vbat_x100);
+    UART_SendString(" | DC_x100: "); UART_SendInt(dc_x100);
+    UART_SendString(" | P_BRUT: "); UART_SendInt(uwPower_new);
+    UART_SendString("\r\n");
+}
+
 /**
   * @brief Envoie l'état actuel du MPPT sur l'UART
   */
-void Send_UART_Status(void)
-{
-    char aTxBuffer[150];
-    int len;
+// void Send_UART_Status(void)
+// {
+//     char aTxBuffer[150];
+//     int len;
 
-    // Constantes de conversion (a adapter selon le circuit)
-    // Ici: 12-bit ADC (4096 max), VREF=3.3V
-    #define V_RATIO  10.0f  // Facteur 10x pour la tension (ex: pont diviseur 10:1)
-    #define I_RATIO  0.1f   // Facteur pour le courant (ex: 100mV/A -> 1/0.1)
+//     // Constantes de conversion (a adapter selon le circuit)
+//     // Ici: 12-bit ADC (4096 max), VREF=3.3V
+//     #define V_RATIO  10.0f  // Facteur 10x pour la tension (ex: pont diviseur 10:1)
+//     #define I_RATIO  0.1f   // Facteur pour le courant (ex: 100mV/A -> 1/0.1)
 
-    float Vpv_f = (float)uwVpv_ADC * 3.3f / 4096.0f * V_RATIO; 
-    float Ipv_f = (float)uwIpv_ADC * 3.3f / 4096.0f * I_RATIO; 
-    float Vbat_f = (float)uwVbat_ADC * 3.3f / 4096.0f * V_RATIO;
-    float Ibat_f = (float)uwIbat_ADC * 3.3f / 4096.0f * I_RATIO;
+//     float Vpv_f = (float)uwVpv_ADC * 3.3f / 4096.0f * V_RATIO; 
+//     float Ipv_f = (float)uwIpv_ADC * 3.3f / 4096.0f * I_RATIO; 
+//     float Vbat_f = (float)uwVbat_ADC * 3.3f / 4096.0f * V_RATIO;
+//     float Ibat_f = (float)uwIbat_ADC * 3.3f / 4096.0f * I_RATIO;
 
-    float Ppv_f = Vpv_f * Ipv_f;
-    float Pbat_f = Vbat_f * Ibat_f;
+//     float Ppv_f = Vpv_f * Ipv_f;
+//     //float Pbat_f = Vbat_f * Ibat_f;
 
-    float DC_perc = (float)uwDutyCycle * 100.0f / PWM_PERIOD;
+//     float DC_perc = (float)uwDutyCycle * 100.0f / PWM_PERIOD;
 
-    len = sprintf(aTxBuffer, 
-                  "PV: V=%.2fV I=%.2fA P=%.2fW | BAT: V=%.2fV I=%.2fA | DC: %.2f%% (%d)\r\n", 
-                  Vpv_f, Ipv_f, Ppv_f, 
-                  Vbat_f, Ibat_f, 
-                  DC_perc, cDirection);
+//     len = sprintf(aTxBuffer, 
+//                   "PV: V=%.2fV I=%.2fA P=%.2fW | BAT: V=%.2fV I=%.2fA | DC: %.2f%% (%d)\r\n", 
+//                   Vpv_f, Ipv_f, Ppv_f, 
+//                   Vbat_f, Ibat_f, 
+//                   DC_perc, cDirection);
 
-    HAL_UART_Transmit(&huart1, (uint8_t*)aTxBuffer, (uint16_t)len, HAL_MAX_DELAY);
+//     HAL_UART_Transmit(&huart1, (uint8_t*)aTxBuffer, (uint16_t)len, HAL_MAX_DELAY);
     
-    // Ajout d'une ligne pour visualiser la logique P&O
-    len = sprintf(aTxBuffer, "MPPT: P_old=%lu P_new=%lu Dir=%d\r\n", 
-                  uwPower_old, uwPower_new, cDirection);
-    HAL_UART_Transmit(&huart1, (uint8_t*)aTxBuffer, (uint16_t)len, HAL_MAX_DELAY);
-}
+//     // Ajout d'une ligne pour visualiser la logique P&O
+//     len = sprintf(aTxBuffer, "MPPT: P_old=%lu P_new=%lu Dir=%d\r\n", 
+//                   uwPower_old, uwPower_new, cDirection);
+//     HAL_UART_Transmit(&huart1, (uint8_t*)aTxBuffer, (uint16_t)len, HAL_MAX_DELAY);
+// }
 
 /* Fonctions statiques de gestion d'erreurs et d'horloge (inchangées) */
 
