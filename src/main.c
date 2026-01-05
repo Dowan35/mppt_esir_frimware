@@ -122,7 +122,7 @@ int main(void) {
     /*Configure CH3*/
     TIM_OC_InitTypeDef sConfigOC = {0};
     sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 191;                        // 50% duty cycle
+    sConfigOC.Pulse = 479;                        // 50% duty cycle
     sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
     sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
     HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
@@ -142,19 +142,50 @@ int main(void) {
   /* Infinite loop */
   while(1)
   {  
-    uint32_t adc_value;
+    uint32_t PA0;
+    uint32_t PA1;
+    uint32_t PA4;
+    uint32_t PA6;
+
     HAL_ADC_Start(&hadc);
     HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
-    adc_value = HAL_ADC_GetValue(&hadc);
+    PA0 = HAL_ADC_GetValue(&hadc);
+
+    HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+    PA1 = HAL_ADC_GetValue(&hadc);
+
+    HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+    PA4 = HAL_ADC_GetValue(&hadc);
+
+    HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+    PA6 = HAL_ADC_GetValue(&hadc);
     HAL_ADC_Stop(&hadc);
 
-    uint32_t tension = (adc_value * 3300l * 8l) / 4095; /*Multiplied by 8 because of the voltage divider*/
-
-    HAL_UART_Transmit(&huart1, (uint8_t*)"ADC=", 4, 100);
+    uint32_t t_pv = (PA0 * 3300 * 8) / 4095; /*Multiplied by 8 because of the voltage divider*/
+    uint32_t i_pv = (PA1 * 3300 * 1000) / 4095; /* /20 *20 But not really relevant...*/
+    uint32_t t_ba = (PA4 * 3300 * 3) / 4095 / 2; /*Multiplied by 8 because of the voltage divider*/
+    uint32_t i_ba = (PA6 * 3300 * 1000) / 4095; /*/ 10 * 10; /* But not really relevant...*/
+ 
+    HAL_UART_Transmit(&huart1, (uint8_t*)"t_pv=", 4, 100);
     char num[8];
-    utoa(tension, num, 10);
+    utoa(t_pv, num, 10);
     HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
-    HAL_UART_Transmit(&huart1, (uint8_t*)"\r\n", 2, 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)" mV\r\n", 5, 100);
+
+    HAL_UART_Transmit(&huart1, (uint8_t*)"i_pv=", 4, 100);
+    utoa(i_pv, num, 10);
+    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)" mA\r\n", 5, 100);
+
+    HAL_UART_Transmit(&huart1, (uint8_t*)"t_ba=", 4, 100);
+    utoa(t_ba, num, 10);
+    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)" mV\r\n", 5, 100);
+
+    HAL_UART_Transmit(&huart1, (uint8_t*)"i_ba=", 4, 100);
+    utoa(i_ba, num, 10);
+    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
+    HAL_UART_Transmit(&huart1, (uint8_t*)" mA\r\n", 5, 100);
 
     HAL_Delay(1000);
   }
@@ -291,16 +322,27 @@ static void MX_ADC_Init(void)
     {
         Error_Handler();
     }
-
-    /* Sélection du channel PA0 */
+    
+    // 1. V_PV (PA0 -> IN0)
     sConfig.Channel = ADC_CHANNEL_0;
     sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
     sConfig.SamplingTime = ADC_SAMPLETIME_41CYCLES_5;
+    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK) { Error_Handler(); }
 
-    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
-    {
-        Error_Handler();
-    }
+    // 2. I_PV (PA1 -> IN1)
+    sConfig.Channel = ADC_CHANNEL_1;
+    sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK) { Error_Handler(); }
+    
+    // 3. V_BAT (PA4 -> IN4)
+    sConfig.Channel = ADC_CHANNEL_4;
+    sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK) { Error_Handler(); }
+
+    // 4. I_BAT (PA6 -> IN6)
+    sConfig.Channel = ADC_CHANNEL_6;
+    sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
+    if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK) { Error_Handler(); }
 }
 
 /**
