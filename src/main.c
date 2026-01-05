@@ -62,6 +62,7 @@ int main(void) {
     MX_TIM1_PWM_Init();
     MX_USART1_UART_Init();
 
+    HAL_UART_Transmit(&huart1, (uint8_t*)"Demarrage...\r\n", 14, 100); // test uart
 
     /* Démarrage de la calibration de l'ADC */
     if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
