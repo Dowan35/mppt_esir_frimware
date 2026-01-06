@@ -557,6 +557,11 @@ static void Error_Handler(void) {
 	}
 }
 
+void DMA1_Channel1_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(&hdma_adc);
+}
+
 #ifdef  USE_FULL_ASSERT
 void assert_failed(uint8_t* file, uint32_t line)
 {
