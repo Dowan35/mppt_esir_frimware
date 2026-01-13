@@ -33,6 +33,9 @@
 uint8_t BlinkSpeed = 0;
 #endif
 
+/*PWM*/
+TIM_HandleTypeDef htim1;
+
 /*UART communication*/
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -48,6 +51,8 @@ static void MX_USART2_UART_Init(void);
 #endif
 static void MX_ADC_Init(void);
 static void SystemClock_Config(void);
+static void PWM_init(void);
+static void send_TandI(uint32_t v_pv, uint32_t i_pv, uint32_t v_bat, uint32_t i_bat);
 static void Error_Handler(void);
 
 /* Private functions ---------------------------------------------------------*/
@@ -70,15 +75,13 @@ int main(void) {
 	 */
 	HAL_Init();
 
-  TIM_HandleTypeDef htim1;
-
 	/* Configure the system clock to have a system clock = 48 Mhz */
 	SystemClock_Config();
 
 #ifdef BOARD_MPPT
 
+  /*Init boardLed and blink it 3 times*/
   BoardMppt_LED_Init();
-
 	for (int i = 0 ; i < 3 ; i = i + 1) {
 		BoardMppt_LED_On();
 		HAL_Delay(500);
@@ -86,58 +89,16 @@ int main(void) {
 		HAL_Delay(500);
 	}
 
-	/*Configure PA10 in TIM_CH3*/
-    __HAL_RCC_GPIOA_CLK_ENABLE();
+  /*PWM init*/
+  PWM_init();
 
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-    GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3 = AF2 sur PA10
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  /* USART init*/
+  MX_USART1_UART_Init();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
 
-    /*Configure PB1 in TIM_CH3N*/
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-
-    GPIO_InitStruct.Pin = GPIO_PIN_1;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3N = PB1
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-    /*Activate TIM1*/
-    __HAL_RCC_TIM1_CLK_ENABLE();
-
-    /*Configure TIM1 for PWM*/
-    htim1.Instance = TIM1;
-    htim1.Init.Prescaler = 0;                     // Timer clock = 48 MHz
-    htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-    htim1.Init.Period = 959;                      // PWM freq = 50 kHz
-    htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-    HAL_TIM_PWM_Init(&htim1);
-
-    /*Configure CH3*/
-    TIM_OC_InitTypeDef sConfigOC = {0};
-    sConfigOC.OCMode = TIM_OCMODE_PWM1;
-    sConfigOC.Pulse = 479;                        // 50% duty cycle
-    sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-    sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-    HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
-
-    /*Start PWM on CH3*/
-    HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
-    HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
-
-    /* USART init*/
-    MX_USART1_UART_Init();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-
-    /* ADC init */
-    MX_ADC_Init();
-    HAL_ADCEx_Calibration_Start(&hadc);
+  /* ADC init */
+  MX_ADC_Init();
+  HAL_ADCEx_Calibration_Start(&hadc);
 
   /* Infinite loop */
   while(1)
@@ -162,30 +123,11 @@ int main(void) {
     HAL_ADC_Stop(&hadc);
 
     uint32_t t_pv = (PA0 * 3300 * 8) / 4095; /*Multiplied by 8 because of the voltage divider*/
-    uint32_t i_pv = (PA1 * 3300 * 1000) / 4095; /* /20 *20 But not really relevant...*/
-    uint32_t t_ba = (PA4 * 3300 * 3) / 4095 / 2; /*Multiplied by 8 because of the voltage divider*/
-    uint32_t i_ba = (PA6 * 3300 * 1000) / 4095; /*/ 10 * 10; /* But not really relevant...*/
+    uint32_t i_pv = (PA1 * 3300 ) / 4095; 
+    uint32_t t_ba = (PA4 * 3300 * 3) / 4095 / 2; /*Multiplied by 3/2 because of the voltage divider*/
+    uint32_t i_ba = (PA6 * 3300 ) / 4095; 
  
-    HAL_UART_Transmit(&huart1, (uint8_t*)"t_pv=", 4, 100);
-    char num[8];
-    utoa(t_pv, num, 10);
-    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
-    HAL_UART_Transmit(&huart1, (uint8_t*)" mV\r\n", 5, 100);
-
-    HAL_UART_Transmit(&huart1, (uint8_t*)"i_pv=", 4, 100);
-    utoa(i_pv, num, 10);
-    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
-    HAL_UART_Transmit(&huart1, (uint8_t*)" mA\r\n", 5, 100);
-
-    HAL_UART_Transmit(&huart1, (uint8_t*)"t_ba=", 4, 100);
-    utoa(t_ba, num, 10);
-    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
-    HAL_UART_Transmit(&huart1, (uint8_t*)" mV\r\n", 5, 100);
-
-    HAL_UART_Transmit(&huart1, (uint8_t*)"i_ba=", 4, 100);
-    utoa(i_ba, num, 10);
-    HAL_UART_Transmit(&huart1, (uint8_t*)num, strlen(num), 100);
-    HAL_UART_Transmit(&huart1, (uint8_t*)" mA\r\n", 5, 100);
+    send_TandI(t_pv, i_pv, t_ba, i_ba);
 
     HAL_Delay(1000);
   }
@@ -223,6 +165,10 @@ int main(void) {
   }
 #endif
 }
+
+/*--------------------------------------*/
+/*            INIT FUNCTIONS            */
+/*--------------------------------------*/
 
 /**
  * @brief  System Clock Configuration
@@ -265,6 +211,7 @@ static void SystemClock_Config(void) {
 	}
 }
 
+/*UART init functions*/
 #ifdef BOARD_MPPT
 void MX_USART1_UART_Init(void){
     huart1.Instance = USART1;
@@ -299,6 +246,55 @@ void MX_USART2_UART_Init(void){
 }
 #endif
 
+/*PWM init function*/
+void PWM_init(void){
+  /*Configure PA10 in TIM_CH3*/
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3 = AF2 sur PA10
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure PB1 in TIM_CH3N*/
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;       // Alternate Function Push-Pull
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF2_TIM1;   // TIM1_CH3N = PB1
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Activate TIM1*/
+  __HAL_RCC_TIM1_CLK_ENABLE();
+
+  /*Configure TIM1 for PWM*/
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;                     // Timer clock = 48 MHz
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 959;                      // PWM freq = 50 kHz
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  HAL_TIM_PWM_Init(&htim1);
+
+  /*Configure CH3*/
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 479;                        // 50% duty cycle
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  HAL_TIM_PWM_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_3);
+
+  /*Start PWM on CH3*/
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+  HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_3);    // Complementary output (PB1)
+}
+
+/*ADC init function*/
 static void MX_ADC_Init(void)
 {
     ADC_ChannelConfTypeDef sConfig = {0};
@@ -343,6 +339,48 @@ static void MX_ADC_Init(void)
     sConfig.Channel = ADC_CHANNEL_6;
     sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
     if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK) { Error_Handler(); }
+}
+
+/*--------------------------------------*/
+/*            UART FUNCTIONS            */
+/*--------------------------------------*/
+
+void UART_SendString(char* s) {
+    HAL_UART_Transmit(&huart1, (uint8_t*)s, strlen(s), 100);
+}
+
+void UART_SendInt(uint32_t n) {
+    char buf[12];
+    int i = 0;
+    if (n == 0) { UART_SendString("0"); return; }
+    while (n > 0) {
+        buf[i++] = (n % 10) + '0';
+        n /= 10;
+    }
+    while (--i >= 0) HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i], 1, 10);
+}
+
+
+/*---------------------------------------*/
+/*            USAGE FUNCTIONS            */
+/*---------------------------------------*/
+
+/* DutyCycle set function */
+void PWM_setDuty(uint16_t duty) {
+    if (duty > htim1.Init.Period)
+        duty = htim1.Init.Period;
+
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, duty);
+}
+
+void send_TandI(uint32_t v_pv, uint32_t i_pv, uint32_t v_bat, uint32_t i_bat){
+  UART_SendString("------------------------\n");
+  UART_SendString("PV : V="); UART_SendInt(v_pv);
+  UART_SendString("mV ; I="); UART_SendInt(i_pv);
+  UART_SendString("mA ;\nBAT: V="); UART_SendInt(v_bat);
+  UART_SendString("mV ; I ="); UART_SendInt(i_bat);
+  UART_SendString("mA ;\n");
+  UART_SendString("------------------------\n");
 }
 
 /**
