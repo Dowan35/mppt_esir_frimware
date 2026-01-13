@@ -114,19 +114,74 @@ int main(void) {
     //     HAL_Delay(100);
     // }
     while (1) {
-        // 1. On vérifie si les données brutes changent (si c'est tjs 0, le DMA est mort)
-        UART_SendString("RAW0:"); UART_SendInt(aADCxConvertedData[0]); 
-        UART_SendString(" RAW2:"); UART_SendInt(aADCxConvertedData[2]);
-        UART_SendString("\r\n");
 
-        // 2. Calcul simple comme dans votre code qui marche
-        // vpv = (ADC * 3300 * 8) / 4095
-        uint32_t vpv_simple = (aADCxConvertedData[0] * 3300l * 8l) / 4095;
+        // /* 1. Récupération des valeurs brutes depuis le buffer DMA */
+        // uint32_t raw_v_pv   = aADCxConvertedData[0];
+        // uint32_t raw_i_pv   = aADCxConvertedData[1];
+        // uint32_t raw_v_batt = aADCxConvertedData[2];
+        // uint32_t raw_i_bat  = aADCxConvertedData[3];
+
+        // /* 2. Calculs de conversion */
+        // // Tension Panneau : Ratio x8 (Pont diviseur)
+        // uint32_t t_pv = (raw_v_pv * 3300 * 8) / 4095; 
         
-        UART_SendString("V_PV_TEST:"); UART_SendInt(vpv_simple);
-        UART_SendString("\r\n");
+        // // Courant Panneau : Conversion brute en mA
+        // //uint32_t i_pv = (raw_i_pv * 3300 * 1) / (4095 * 2); 
+        // uint32_t i_pv = (raw_i_pv * 3300 * 1) / (4095); 
+        // // // (I = U/R. on a *20 car R2 et R3 en parralèle qui donnent /0.05 (donc *20), et /20 car le TSC101AILT a un gain de 20 
+        // // //d'après la datasheet page 16, donc finalement, *1)
+        // //uint32_t i_pv = raw_i_pv;  // oscille entre 0 et 9
+        
+        // // Tension Batterie : Ratio x3 / 2 (Adaptation spécifique)
+        // uint32_t t_ba = (raw_v_batt * 3300 * 3) / (4095 * 2); 
+        
+        // // Courant Batterie : Conversion brute en mA
+        // //uint32_t i_ba = (raw_i_bat * 3300 * 100 ) / (4095 * 43); 
+        // uint32_t i_ba = (raw_i_bat * 3300 ) / (4095); 
+        // // // (I = U/R. on a *10 car R5 qui donne /0.43 (donc *10), et /10 car le ZXCT1041 a un gain de 10
+        // // //d'après la datasheet page 1, donc finalement, *1)
+        // //uint32_t i_ba = raw_i_bat; // oscille entre 3 et 14
 
-        HAL_Delay(1000);
+
+                //oversampling
+        uint32_t sum_i_pv = 0;
+        uint32_t sum_i_ba = 0;
+        const uint32_t nb_echantillons = 7; // Nombre de mesures pour la moyenne
+        for (uint32_t i = 0; i < nb_echantillons; i++) {
+            sum_i_pv += aADCxConvertedData[1]; // I_PV
+            sum_i_ba += aADCxConvertedData[3]; // I_BAT
+            HAL_Delay(1); // Petit délai pour laisser le temps au DMA de rafraîchir les données
+        }
+        // Calcul des moyennes brutes
+        uint32_t avg_raw_i_pv = sum_i_pv / nb_echantillons;
+        uint32_t avg_raw_i_ba = sum_i_ba / nb_echantillons;
+        /* 2. Récupération des tensions (instantanées ou on peut  aussi les moyennner) */
+        uint32_t raw_v_pv   = aADCxConvertedData[0];
+        uint32_t raw_v_batt = aADCxConvertedData[2];
+        /* 3. Calculs de conversion */
+        // Tension Panneau (Ratio x8)
+        uint32_t t_pv = (raw_v_pv * 3300 * 8) / 4095; 
+        // Courant Panneau (Moyenné)
+        // Gain TSC101A = 20, Rshunt = 100mOhm -> Ratio 1/2
+        uint32_t i_pv = (avg_raw_i_pv * 3300) / (4095*2); 
+        // Tension Batterie (Ratio x3/2)
+        uint32_t t_ba = (raw_v_batt * 3300 * 3) / (4095 * 2); 
+        // Courant Batterie (Moyenné)
+        // Gain ZXCT1041 = 10. Le ratio dépend de la Rshunt batterie, ici 0.43 ohms = 43/100 , I=U/R donc x10x100/0.43
+        uint32_t i_ba = (avg_raw_i_ba * 3300 * 100) / (4095 * 43 * 10);
+
+        /* 3. Affichage UART structuré */
+        UART_SendString("PV : "); 
+        UART_SendInt(t_pv); UART_SendString("mV | ");
+        UART_SendInt(i_pv); UART_SendString("mA\r\n");
+
+        UART_SendString("BAT: "); 
+        UART_SendInt(t_ba); UART_SendString("mV | ");
+        UART_SendInt(i_ba); UART_SendString("mA\r\n");
+        
+        UART_SendString("--------------------------\r\n");
+
+        HAL_Delay(1000); /* Mise à jour toutes les secondes */
     }
 }
 
@@ -155,7 +210,7 @@ void MPPT_Algorithm_Run(void)
     {
         // Batterie pleine (Absorption ou Float). Arrêter la charge.
         uwDutyCycle = 0; 
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle); // Appliquer le Duty Cycle à la PWM
         return; // Sortir de l'MPPT, le Duty Cycle est fixé à zéro
     }
     
@@ -163,8 +218,8 @@ void MPPT_Algorithm_Run(void)
 
     // --- PHASE 2: ALGORITHME MPPT (Extraction de puissance) ---
 
-    uwPower_old = uwPower_new;
-    uwPower_new = uwVpv_ADC * uwIpv_ADC;
+    uwPower_old = uwPower_new; //puissance calculée du panneau solaire
+    uwPower_new = uwVpv_ADC * uwIpv_ADC; // peut etre remplacer uwVpv_ADC * uwIpv_ADC par uwVbat_ADC * uwIbat_ADC pour se baser sur la puissance de la batterie
 
     if (uwVpv_ADC == 0 || uwIpv_ADC == 0) 
     {
@@ -198,7 +253,7 @@ void MPPT_Algorithm_Run(void)
     }
     
     // Appliquer la nouvelle valeur de Duty Cycle au Timer
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);// Appliquer le Duty Cycle à la PWM
 
     // Il faut aussi verifier Vbat pour la surtension (charge complète).
     // Si Vbat est trop haut, on mettrait le Duty Cycle à 0 ou on limiterait la puissance.
@@ -236,7 +291,7 @@ static void MX_ADC_Init(void)
         Error_Handler();
     }
 
-    // --- Configuration des 4 canaux dans l'ordre du buffer DMA ---
+    // --- Configuration des 4 canaux dans l'ordre du buffer DMA, ordre de la tension / intensité ---
     
     // 1. V_PV (PA0 -> IN0)
     sConfig.Channel = ADC_CHANNEL_0;
