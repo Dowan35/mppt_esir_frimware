@@ -33,6 +33,20 @@
 #include "stm32f0308_discovery.h"
 #endif
 
+/* Private function prototypes -----------------------------------------------*/
+static void SystemClock_Config(void);
+static void Error_Handler(void);
+static void MX_DMA_Init(void);
+static void MX_ADC_Init(void);
+static void MX_TIM1_PWM_Init(void);
+static void MX_USART1_UART_Init(void);
+uint32_t Correct_Intensity_Panel(uint32_t uwIpv_ADC);
+void MPPT_Algorithm_Run(uint32_t t_pv, uint32_t i_pv);
+void Send_UART_Status(void);
+void UART_CheckInput(void);
+void UART_SendString(char* s);
+void UART_SendInt(uint32_t n);
+
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/

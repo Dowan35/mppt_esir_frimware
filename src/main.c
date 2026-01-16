@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 /* Private define ------------------------------------------------------------*/
 #define PWM_PERIOD   959    // 50 kHz sur un bus horloge de 48 MHz
@@ -11,7 +12,7 @@
 // Voir la datasheet du ADC.
 // adc 12 bits? -> max 2^12 -> de 0 à 4096-1 -> si la tension max mesurable est de 36v<=>4095, 
 // on a 12v <=> 12*4095/36 = 1365.
-#define V_BATT_MAX_ADC  1365 // Exemple tension max batterie pour 12V
+#define V_BATT_MAX_ADC  1300 // Exemple tension max batterie pour 12V
 #define I_BATT_MAX_ADC  2000 // Exemple courrant max batterie pour 5A
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
@@ -34,17 +35,9 @@ uint32_t uwPower_old = 0;           // Puissance PV précédente
 uint32_t uwPower_new = 0;           // Nouvelle puissance PV
 int8_t cDirection = 1;              // Direction de perturbation (+1 ou -1)
 
-/* Private function prototypes -----------------------------------------------*/
-static void SystemClock_Config(void);
-static void Error_Handler(void);
-static void MX_DMA_Init(void);
-static void MX_ADC_Init(void);
-static void MX_TIM1_PWM_Init(void);
-static void MX_USART1_UART_Init(void);
-void MPPT_Algorithm_Run(void);
-void Send_UART_Status(void);
-void UART_SendString(char* s);
-void UART_SendInt(uint32_t n);
+// Variables pour la réception UART
+char rx_buffer[10];
+uint8_t rx_index = 0;
 
 /**
  * @brief  Main program
@@ -142,49 +135,97 @@ int main(void) {
         // // //d'après la datasheet page 1, donc finalement, *1)
         // //uint32_t i_ba = raw_i_bat; // oscille entre 3 et 14
 
+        static uint32_t last_display = 0;
 
-                //oversampling
-        uint32_t sum_i_pv = 0;
-        uint32_t sum_i_ba = 0;
-        const uint32_t nb_echantillons = 7; // Nombre de mesures pour la moyenne
-        for (uint32_t i = 0; i < nb_echantillons; i++) {
-            sum_i_pv += aADCxConvertedData[1]; // I_PV
-            sum_i_ba += aADCxConvertedData[3]; // I_BAT
-            HAL_Delay(1); // Petit délai pour laisser le temps au DMA de rafraîchir les données
+        if (HAL_GetTick() - last_display > 1000) { /* Mise à jour toutes les secondes */
+
+            // //oversampling
+            // float sum_i_pv = 0;
+            // uint32_t sum_i_ba = 0;
+
+            uwVpv_ADC = aADCxConvertedData[0]; // V_PV
+            uwIpv_ADC = aADCxConvertedData[1]; // I_PV
+            uwVbat_ADC = aADCxConvertedData[2]; // V_BAT
+            uwIbat_ADC = aADCxConvertedData[3]; // I_BAT
+
+            // const uint32_t nb_echantillons = 7; // Nombre de mesures pour la moyenne
+            // for (uint32_t i = 0; i < nb_echantillons; i++) {
+            //     sum_i_pv += raw_i_pv; // I_PV
+            //     sum_i_ba += uwIbat_ADC; // I_BAT
+            //     HAL_Delay(10); // Petit délai pour laisser le temps au DMA de rafraîchir les données
+            // }
+            // // Calcul des moyennes brutes
+            // uint32_t avg_raw_i_pv = sum_i_pv / nb_echantillons;
+            // uint32_t avg_raw_i_ba = sum_i_ba / nb_echantillons;
+  
+            /*  Calculs de conversion */
+            // Tension Panneau (Ratio x8)
+            uint32_t t_pv = (uwVpv_ADC * 3300 * 8) / 4095; 
+            // Courant Panneau (Moyenné)
+            // Gain TSC101A = 20, et Rshunt = 10 ohm déja calculé
+            //uint32_t i_pv = (Correct_Intensity_Panel(uwIpv_ADC) * 3300) / (4095000);//on enleve le x1000 de la fonction afine
+            uint32_t i_pv = (uwIpv_ADC * 3300) / (4095*20*10);//on enleve le x1000 de la fonction afine
+            // Tension Batterie (Ratio x3/2)
+            uint32_t t_ba = (uwVbat_ADC * 3300 * 3) / (4095 * 2); 
+            // Courant Batterie (calculé à partir de celui du panneau)
+            uint32_t i_ba = t_pv * i_pv / t_ba;
+
+            // if (t_ba >= V_BATT_MAX_ADC) { // verification de la charge batterie, protection
+            //     uwDutyCycle = 0; // Limite à la valeur max définie
+            //     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
+            //     UART_SendString("Batterie chargée, arret.\r\n");
+            //     exit(0);
+            // }
+
+            //MPPT_Algorithm_Run(t_pv, i_pv);
+
+            /* 3. Affichage UART structuré */
+            UART_SendString("PV : "); 
+            UART_SendInt(t_pv); UART_SendString("mV | ");
+            UART_SendInt(i_pv); UART_SendString("mA\r\n");
+
+            UART_SendString("BAT: "); 
+            UART_SendInt(t_ba); UART_SendString("mV | ");
+            UART_SendInt(i_ba); UART_SendString("mA\r\n");
+            
+            
+            UART_SendString("--------------------------\r\n");
+            last_display = HAL_GetTick();
         }
-        // Calcul des moyennes brutes
-        uint32_t avg_raw_i_pv = sum_i_pv / nb_echantillons;
-        uint32_t avg_raw_i_ba = sum_i_ba / nb_echantillons;
-        /* 2. Récupération des tensions (instantanées ou on peut  aussi les moyennner) */
-        uint32_t raw_v_pv   = aADCxConvertedData[0];
-        uint32_t raw_v_batt = aADCxConvertedData[2];
-        /* 3. Calculs de conversion */
-        // Tension Panneau (Ratio x8)
-        uint32_t t_pv = (raw_v_pv * 3300 * 8) / 4095; 
-        // Courant Panneau (Moyenné)
-        // Gain TSC101A = 20, Rshunt = 100mOhm -> Ratio 1/2
-        uint32_t i_pv = (avg_raw_i_pv * 3300) / (4095*2); 
-        // Tension Batterie (Ratio x3/2)
-        uint32_t t_ba = (raw_v_batt * 3300 * 3) / (4095 * 2); 
-        // Courant Batterie (Moyenné)
-        // Gain ZXCT1041 = 10. Le ratio dépend de la Rshunt batterie, ici 0.43 ohms = 43/100 , I=U/R donc x10x100/0.43
-        uint32_t i_ba = (avg_raw_i_ba * 3300 * 100) / (4095 * 43 * 10);
 
-        /* 3. Affichage UART structuré */
-        UART_SendString("PV : "); 
-        UART_SendInt(t_pv); UART_SendString("mV | ");
-        UART_SendInt(i_pv); UART_SendString("mA\r\n");
+        UART_CheckInput();
+        HAL_Delay(50);
 
-        UART_SendString("BAT: "); 
-        UART_SendInt(t_ba); UART_SendString("mV | ");
-        UART_SendInt(i_ba); UART_SendString("mA\r\n");
-        
-        UART_SendString("--------------------------\r\n");
-
-        HAL_Delay(1000); /* Mise à jour toutes les secondes */
     }
 }
 
+// ===========================================================================
+//                        Mesure de l'intensité via Ampli+ADC
+// ===========================================================================
+
+/**
+  * @brief  Compense les pertes de l'ampli avec une fonction affine
+  */
+uint32_t Correct_Intensity_Panel(uint32_t uwIpv_ADC)
+{
+
+    float raw_i_pv_x1000 = 0; // vraie valeur de l'intensité que doit recevoir le MC
+
+    if (uwIpv_ADC < 98){
+        raw_i_pv_x1000 = 0; // valeur mesurée trop faible pour avoir une donnée fiable
+
+    } else if (uwIpv_ADC >= 424){ // valeurs hautes, l'ampli permet d'avoir un vrai x20 stable
+        raw_i_pv_x1000 = uwIpv_ADC*5;// 1000 / (20*10) = 5
+
+    } else {
+
+        //Fonction affine de correction qui simule le comportement de l'ampli pour t_pv entre 6 et 17 volts
+        //Équation d'origine : (0.04497 * ADC + 2.2485) / 10
+        raw_i_pv_x1000 = (4497 * uwIpv_ADC + 224850) / 1000; // I=U/R -> /10 car Rshunt (R2) =  10 ohms
+    }
+
+    return raw_i_pv_x1000;
+}
 // ===========================================================================
 //                        Algorithme MPPT (P&O)
 // ===========================================================================
@@ -192,36 +233,14 @@ int main(void) {
 /**
   * @brief  Exécute l'algorithme Perturb and Observe (P&O) avec gestion de la batterie.
   */
-void MPPT_Algorithm_Run(void)
+void MPPT_Algorithm_Run(uint32_t t_pv, uint32_t i_pv)
 {
-    // 1. Copie des valeurs ADC (mis à jour par DMA en continu)
-    uwVpv_ADC = aADCxConvertedData[0]; // V_PV
-    uwIpv_ADC = aADCxConvertedData[1]; // I_PV
-    uwVbat_ADC = aADCxConvertedData[2]; // V_BAT
-    uwIbat_ADC = aADCxConvertedData[3]; // I_BAT
-    
-    // Pour cet exemple, supposons que la tension Vbat est le point de sortie du buck.
-    // L'algorithme MPPT s'exécute sur le côté entrée (PV).
-
-    // --- LOGIQUE MPPT (Cœur) ---
-
-    // --- PHASE 1: VÉRIFICATION DE LA BATTERIE (Contrôleur de Charge) ---
-    if (uwVbat_ADC >= V_BATT_MAX_ADC)
-    {
-        // Batterie pleine (Absorption ou Float). Arrêter la charge.
-        uwDutyCycle = 0; 
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle); // Appliquer le Duty Cycle à la PWM
-        return; // Sortir de l'MPPT, le Duty Cycle est fixé à zéro
-    }
-    
-    // Si la batterie n'est pas pleine, passer à l'MPPT pour trouver le point de puissance max.
-
-    // --- PHASE 2: ALGORITHME MPPT (Extraction de puissance) ---
+    // --- ALGORITHME MPPT (Extraction de puissance) ---
 
     uwPower_old = uwPower_new; //puissance calculée du panneau solaire
-    uwPower_new = uwVpv_ADC * uwIpv_ADC; // peut etre remplacer uwVpv_ADC * uwIpv_ADC par uwVbat_ADC * uwIbat_ADC pour se baser sur la puissance de la batterie
+    uwPower_new = t_pv * i_pv;
 
-    if (uwVpv_ADC == 0 || uwIpv_ADC == 0) 
+    if (t_pv == 0 || i_pv == 0) 
     {
         return; // Panneau inactif
     }
@@ -253,10 +272,9 @@ void MPPT_Algorithm_Run(void)
     }
     
     // Appliquer la nouvelle valeur de Duty Cycle au Timer
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);// Appliquer le Duty Cycle à la PWM
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);// Appliquer le Duty Cycle à la PWMUART_SendString("mV | ");
+    UART_SendString("PWM: ");UART_SendInt(uwDutyCycle); UART_SendString("\r\n");
 
-    // Il faut aussi verifier Vbat pour la surtension (charge complète).
-    // Si Vbat est trop haut, on mettrait le Duty Cycle à 0 ou on limiterait la puissance.
 }
 
 
@@ -376,7 +394,8 @@ static void MX_USART1_UART_Init(void)
     huart1.Init.WordLength = UART_WORDLENGTH_8B;
     huart1.Init.StopBits = UART_STOPBITS_1;
     huart1.Init.Parity = UART_PARITY_NONE;
-    huart1.Init.Mode = UART_MODE_TX; // Mode TX seulement
+    //huart1.Init.Mode = USART_MODE_TX;
+    huart1.Init.Mode = UART_MODE_TX_RX;
     huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     huart1.Init.OverSampling = UART_OVERSAMPLING_16;
 
@@ -458,7 +477,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
         /**USART1 GPIO Configuration
         PA2     ------> USART1_TX (Pin 8)
         */
-        GPIO_InitStruct.Pin = GPIO_PIN_2;
+        GPIO_InitStruct.Pin = GPIO_PIN_2 | GPIO_PIN_3;
 
         //direction et le comportement de la broche + interruptions
         GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -542,6 +561,57 @@ void Send_UART_Status(void) {
     UART_SendString(" | DC_x100: "); UART_SendInt(dc_x100);
     UART_SendString(" | P_BRUT: "); UART_SendInt(uwPower_new);
     UART_SendString("\r\n");
+}
+
+/**
+ * @brief  Vérifie si un message UART est reçu et met à jour le Duty Cycle.
+ * @note   À appeler dans la boucle while(1).
+ */
+void UART_CheckInput(void) {
+    uint8_t byte;
+
+    // Timeout de 0 ou 1 pour ne pas bloquer la boucle principale
+    if (HAL_UART_Receive(&huart1, &byte, 1, 1) == HAL_OK) {
+        
+        // ECHO : Renvoie le caractère reçu pour voir ce qu'on tape dans PuTTY
+        //HAL_UART_Transmit(&huart1, &byte, 1, 10);
+
+        if (byte >= '0' && byte <= '9') {
+            if (rx_index < 9) {
+                rx_buffer[rx_index++] = byte;
+            }
+        } 
+        else if (byte == '\r' || byte == '\n') {
+            if (rx_index > 0) {
+                rx_buffer[rx_index] = '\0';
+                int percent = atoi(rx_buffer);
+                
+                if (percent >= 0 && percent <= 100) {
+                    uwDutyCycle = (percent * PWM_PERIOD) / 100;
+                    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
+                    
+                    UART_SendString("\r\n>> OK! DC fixe a ");
+                    UART_SendInt(percent);
+                    UART_SendString("%\r\n");
+                } else {
+                    UART_SendString("\r\n>> Erreur: 0-100 uniquement\r\n");
+                }
+                rx_index = 0; // Reset après traitement
+            }
+        } 
+        else if (byte == 'q') {
+            rx_index = 0;
+            UART_SendString("\r\n>> Reset buffer\r\n");
+        }
+        // Ignorer les caractères de contrôle courants sans réinitialiser
+        else if (byte == ' ' || byte == 8) { // Espace ou Backspace
+             // Optionnel : gérer le backspace
+        }
+        else {
+            // Ne réinitialisez rx_index que si vous êtes sûr que c'est une erreur critique
+            // UART_SendString("\r\nDebug: Caractere ignore\r\n");
+        }
+    }
 }
 
 /**
