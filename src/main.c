@@ -82,7 +82,7 @@ int main(void) {
 
   /*Init boardLed and blink it 3 times*/
   BoardMppt_LED_Init();
-	for (int i = 0 ; i < 3 ; i = i + 1) {
+	for (int i = 0 ; i < 5 ; i = i + 1) {
 		BoardMppt_LED_On();
 		HAL_Delay(500);
 		BoardMppt_LED_Off();
@@ -123,9 +123,9 @@ int main(void) {
     HAL_ADC_Stop(&hadc);
 
     uint32_t t_pv = (PA0 * 3300 * 8) / 4095; /*Multiplied by 8 because of the voltage divider*/
-    uint32_t i_pv = (PA1 * 3300 ) / 4095; 
+    uint32_t i_pv = (PA1 * 3300 ) / 4095 ;// 2; x
     uint32_t t_ba = (PA4 * 3300 * 3) / 4095 / 2; /*Multiplied by 3/2 because of the voltage divider*/
-    uint32_t i_ba = (PA6 * 3300 ) / 4095; 
+    uint32_t i_ba = (PA6 * 3300 * 10 ) / 4095 / 43; 
  
     send_TandI(t_pv, i_pv, t_ba, i_ba);
 
@@ -374,13 +374,13 @@ void PWM_setDuty(uint16_t duty) {
 }
 
 void send_TandI(uint32_t v_pv, uint32_t i_pv, uint32_t v_bat, uint32_t i_bat){
-  UART_SendString("------------------------\n");
+  UART_SendString("------------------------\r\n");
   UART_SendString("PV : V="); UART_SendInt(v_pv);
   UART_SendString("mV ; I="); UART_SendInt(i_pv);
-  UART_SendString("mA ;\nBAT: V="); UART_SendInt(v_bat);
-  UART_SendString("mV ; I ="); UART_SendInt(i_bat);
-  UART_SendString("mA ;\n");
-  UART_SendString("------------------------\n");
+  UART_SendString("mA ;\r\nBAT: V="); UART_SendInt(v_bat);
+  UART_SendString("mV ; I="); UART_SendInt(i_bat);
+  UART_SendString("mA ;\r\n");
+  UART_SendString("------------------------\r\n");
 }
 
 /**
