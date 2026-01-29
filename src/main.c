@@ -170,16 +170,24 @@ int main(void) {
             MPPT_Algorithm_Run(t_pv, i_pv);
 
             /* 3. Affichage UART structuré */
-            UART_SendString("PV : "); 
-            UART_SendInt(t_pv); UART_SendString("mV | ");
-            UART_SendInt(i_pv); UART_SendString("uA\r\n");
 
-            UART_SendString("BAT: "); 
-            UART_SendInt(t_ba); UART_SendString("mV | ");
-            UART_SendInt(i_ba); UART_SendString("uA\r\n");
+            /* Format lisisble */
+            // UART_SendString("PV : "); 
+            // UART_SendInt(t_pv); UART_SendString("mV | ");
+            // UART_SendInt(i_pv); UART_SendString("uA\r\n");
+
+            // UART_SendString("BAT: "); 
+            // UART_SendInt(t_ba); UART_SendString("mV | ");
+            // UART_SendInt(i_ba); UART_SendString("uA\r\n");
             
+            // UART_SendString("--------------------------\r\n");
+
+            /* Fromat uart simple */
+            UART_SendInt(t_pv); UART_SendString(",");
+            UART_SendInt(i_pv); UART_SendString(",");
+            UART_SendInt(t_ba); UART_SendString(",");
+            UART_SendInt(i_ba); UART_SendString("\n");
             
-            UART_SendString("--------------------------\r\n");
             last_display = HAL_GetTick();
         }
 
