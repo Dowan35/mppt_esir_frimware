@@ -12,7 +12,7 @@
 // Voir la datasheet du ADC.
 // adc 12 bits? -> max 2^12 -> de 0 à 4096-1 -> si la tension max mesurable est de 36v<=>4095, 
 // on a 12v <=> 12*4095/36 = 1365.
-#define V_BATT_MAX_ADC  1300 // Exemple tension max batterie pour 12V
+#define V_BATT_MAX_ADC  410000 // Exemple tension max batterie pour 12V
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc;
@@ -24,7 +24,7 @@ UART_HandleTypeDef huart1;
 uint32_t aADCxConvertedData[ADC_CONV_COUNT];
 
 // Variables de mesure et de contrôle
-uint32_t uwDutyCycle = 288;         // Duty Cycle actuel (30% par défaut)
+uint32_t uwDutyCycle = 478;         // Duty Cycle actuel (30% par défaut)
 uint32_t uwVpv_ADC = 0;             // Tension Panneau (PA0 -> IN0)
 uint32_t uwIpv_ADC = 0;             // Courant Panneau (PA1 -> IN1)
 uint32_t uwVbat_ADC = 0;            // Tension Batterie (PA4 -> IN4)
@@ -53,7 +53,7 @@ int main(void) {
     MX_TIM1_PWM_Init();
     MX_USART1_UART_Init();
 
-    HAL_UART_Transmit(&huart1, (uint8_t*)"Demarrage...\r\n", 14, 100); // test uart
+    //HAL_UART_Transmit(&huart1, (uint8_t*)"Demarrage...\r\n", 14, 100); // test uart
 
     /* Démarrage de la calibration de l'ADC */
     if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
@@ -99,36 +99,9 @@ int main(void) {
     /* Boucle infinie principale */
     while (1) {
 
-        // /* 1. Récupération des valeurs brutes depuis le buffer DMA */
-        // uint32_t raw_v_pv   = aADCxConvertedData[0];
-        // uint32_t raw_i_pv   = aADCxConvertedData[1];
-        // uint32_t raw_v_batt = aADCxConvertedData[2];
-        // uint32_t raw_i_bat  = aADCxConvertedData[3];
-
-        // /* 2. Calculs de conversion */
-        // // Tension Panneau : Ratio x8 (Pont diviseur)
-        // uint32_t t_pv = (raw_v_pv * 3300 * 8) / 4095; 
-        
-        // // Courant Panneau : Conversion brute en mA
-        // //uint32_t i_pv = (raw_i_pv * 3300 * 1) / (4095 * 2); 
-        // uint32_t i_pv = (raw_i_pv * 3300 * 1) / (4095); 
-        // // // (I = U/R. on a *20 car R2 et R3 en parralèle qui donnent /0.05 (donc *20), et /20 car le TSC101AILT a un gain de 20 
-        // // //d'après la datasheet page 16, donc finalement, *1)
-        // //uint32_t i_pv = raw_i_pv;  // oscille entre 0 et 9
-        
-        // // Tension Batterie : Ratio x3 / 2 (Adaptation spécifique)
-        // uint32_t t_ba = (raw_v_batt * 3300 * 3) / (4095 * 2); 
-        
-        // // Courant Batterie : Conversion brute en mA
-        // //uint32_t i_ba = (raw_i_bat * 3300 * 100 ) / (4095 * 43); 
-        // uint32_t i_ba = (raw_i_bat * 3300 ) / (4095); 
-        // // // (I = U/R. on a *10 car R5 qui donne /0.43 (donc *10), et /10 car le ZXCT1041 a un gain de 10
-        // // //d'après la datasheet page 1, donc finalement, *1)
-        // //uint32_t i_ba = raw_i_bat; // oscille entre 3 et 14
-
         static uint32_t last_display = 0;
 
-        if (HAL_GetTick() - last_display > 500) { /* Mise à jour toutes les secondes */
+        if (HAL_GetTick() - last_display > 500) { /* Mise à jour toutes les  x mili-secondes */
 
             uwVpv_ADC = aADCxConvertedData[0]; // V_PV
             uwIpv_ADC = aADCxConvertedData[1]; // I_PV
@@ -152,48 +125,53 @@ int main(void) {
             /*  Calculs de conversion */
             // Tension Panneau (Millman: (R16+R17)/R17 = 8--> Ratio x8)
             uint32_t t_pv = (uwVpv_ADC * 3300 * 8) / 4095; 
-            // Courant Panneau (Moyenné)
-            // Gain TSC101A = 20, et Rshunt = 10 ohm. *1000 pour plus de précision
-            uint32_t i_pv = (uwIpv_ADC * 3300 * 1000) / (4095*20*10);
+            // Courant Panneau
+            // Gain TSC101A = 20, et Rshunt = 0.215 ohm = 215/1000. *1000 pour plus de précision
+            uint32_t i_pv = (uwIpv_ADC * 3300 * 1000) / (4095*20*215);
             // Tension Batterie ((R18+R19+R20)/(R19+R20) = 1.5 --> Ratio x3/2)
             uint32_t t_ba = (uwVbat_ADC * 3300 * 3) / (4095 * 2); 
             // Courant Batterie (calculé à partir de celui du panneau P=U*I)
-            uint32_t i_ba = t_pv * i_pv / t_ba;
+            //uint32_t i_ba = t_pv * i_pv / t_ba;
+            // Courant Batterie Gain TSC101A = 10, et Rshunt = 0.1 ohm = 1/10. *1000 pour plus de précision
+            uint32_t i_ba = (uwIbat_ADC * 3300 * 10) / (4095 * 10 * 1);
 
             if (t_ba >= V_BATT_MAX_ADC) { // verification de la charge batterie, protection
                 uwDutyCycle = 0; // Limite à la valeur max définie
                 __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
-                UART_SendString("Batterie chargée, arret.\r\n");
-                exit(0);
+                // UART_SendString("Batterie chargée, arret.\r\n");
+                // exit(0);
+            } 
+            else {
+                //MPPT_Algorithm_Run(t_pv, i_pv);
+                uwDutyCycle = 478; // test debu pwm 50%
+                __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);
+                
+                /* 3. Affichage UART structuré */
+
+                /* Format lisisble */
+                // UART_SendString("PV : "); 
+                // UART_SendInt(t_pv); UART_SendString("mV | ");
+                // UART_SendInt(i_pv); UART_SendString("uA\r\n");
+
+                // UART_SendString("BAT: "); 
+                // UART_SendInt(t_ba); UART_SendString("mV | ");
+                // UART_SendInt(i_ba); UART_SendString("uA\r\n");
+                
+                // UART_SendString("--------------------------\r\n");
+
+                /* Fromat uart simple */
+                UART_SendInt(t_pv); UART_SendString(",");
+                UART_SendInt(i_pv); UART_SendString(",");
+                UART_SendInt(t_ba); UART_SendString(",");
+                UART_SendInt(i_ba); UART_SendString(",");
+                UART_SendInt(uwDutyCycle); UART_SendString("\n");
             }
-
-            MPPT_Algorithm_Run(t_pv, i_pv);
-
-            /* 3. Affichage UART structuré */
-
-            /* Format lisisble */
-            // UART_SendString("PV : "); 
-            // UART_SendInt(t_pv); UART_SendString("mV | ");
-            // UART_SendInt(i_pv); UART_SendString("uA\r\n");
-
-            // UART_SendString("BAT: "); 
-            // UART_SendInt(t_ba); UART_SendString("mV | ");
-            // UART_SendInt(i_ba); UART_SendString("uA\r\n");
-            
-            // UART_SendString("--------------------------\r\n");
-
-            /* Fromat uart simple */
-            UART_SendInt(t_pv); UART_SendString(",");
-            UART_SendInt(i_pv); UART_SendString(",");
-            UART_SendInt(t_ba); UART_SendString(",");
-            UART_SendInt(i_ba); UART_SendString("\n");
             
             last_display = HAL_GetTick();
         }
 
         UART_CheckInput();
         HAL_Delay(50);
-
     }
 }
 
@@ -270,8 +248,7 @@ void MPPT_Algorithm_Run(uint32_t t_pv, uint32_t i_pv)
     
     // Appliquer la nouvelle valeur de Duty Cycle au Timer
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, uwDutyCycle);// Appliquer le Duty Cycle à la PWMUART_SendString("mV | ");
-    UART_SendString("PWM: ");UART_SendInt(uwDutyCycle); UART_SendString("\r\n");
-}
+}    
 
 // ===========================================================================
 //                          Fonctions d'Initialisation
