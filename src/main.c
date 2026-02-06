@@ -12,7 +12,7 @@
 // Voir la datasheet du ADC.
 // adc 12 bits? -> max 2^12 -> de 0 à 4096-1 -> si la tension max mesurable est de 36v<=>4095, 
 // on a 12v <=> 12*4095/36 = 1365.
-#define V_BATT_MAX_ADC  410000 // Exemple tension max batterie pour 12V
+#define V_BATT_MAX_ADC  4100 // Exemple tension max batterie pour 12V
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc;
